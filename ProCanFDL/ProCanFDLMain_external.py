@@ -1,22 +1,19 @@
 # Description: This script is used to run the federated learning experiments on the ProCan compendium + external datasets (Figure 4).
+# The Main class to train each FedModel as local models.
+# VCB used as a single client.
 
 import os
-import sys
-import json
-import torch
+
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import (
-    train_test_split,
-    StratifiedKFold,
-    StratifiedGroupKFold,
-    KFold,
-)
-from sklearn.preprocessing import LabelEncoder
+import torch
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
 from FedAggregateWeights import WeightsAggregation
 from FedTrain import TrainFedProtNet
 from utils.ProtDataset import ProtDataset
-from sklearn.model_selection import GroupShuffleSplit
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -57,8 +54,10 @@ if __name__ == "__main__":
     }
     print(hypers)
     TARGET = hypers["target"]
+    META_COL_NUMS = 73
+
     included_types = hypers["included_types"]
-    FILE_NAME = f"{hypers['target']}_group{N_included_clients}of{N_clients}_{N_repeats}times_DIA_CPTAC_20240821_{N_iters}iter"
+    FILE_NAME = f"{hypers['target']}_group{N_included_clients}of{N_clients}_{N_repeats}times_DIA_CPTAC_20250103_{N_iters}iter"
     MODEL_PATH = f"/home/scai/VCB_E0008/models/Fed/{FILE_NAME}"
 
     if not os.path.exists(MODEL_PATH):
@@ -73,7 +72,7 @@ if __name__ == "__main__":
     ).to_dict()["UniProtID"]
 
     combined_df = pd.read_csv(
-        "../data/P10/external/DIA_datasets/E0008_P10_protein_averaged_log2_transformed_EB_cptac_dia_processed_together_zscore_20240820.csv",
+        "../data/P10/external/DIA_datasets/E0008_P10_protein_averaged_log2_transformed_EB_cptac_dia_no_norm_20240820.csv",
         index_col=0,
         low_memory=False,
     )
@@ -118,7 +117,6 @@ if __name__ == "__main__":
             | (combined_rest_cohort_df["prep_cohort"].str.startswith("DIA"))
         )
     ]
-    META_COL_NUMS = 73
 
     combined_selected_meta_df = combined_selected_df.iloc[:, :META_COL_NUMS]
     combined_selected_meta_df["prep_cohort_number"] = (
@@ -171,8 +169,48 @@ if __name__ == "__main__":
             | (train_rest_df["prep_cohort"].str.startswith("DIA"))
         )
     ]
-    test_rest_df = pd.concat(test_rest_df)
 
+    # Combine procan and dia data for z-score normalization
+    combined_procan_dia_df = pd.concat(
+        [combined_vcb_df, train_rest_procan_df, train_rest_dia_df]
+    )
+    combined_procan_dia_protein_data = combined_procan_dia_df.iloc[:, META_COL_NUMS:]
+    scaler_procan_dia = StandardScaler()
+    combined_procan_dia_protein_data_zscore = pd.DataFrame(
+        scaler_procan_dia.fit_transform(combined_procan_dia_protein_data),
+        index=combined_procan_dia_protein_data.index,
+        columns=combined_procan_dia_protein_data.columns,
+    )
+    combined_procan_dia_df.iloc[:, META_COL_NUMS:] = (
+        combined_procan_dia_protein_data_zscore
+    )
+
+    # Split back into original dataframes
+    combined_vcb_df = combined_procan_dia_df[
+        combined_procan_dia_df.index.isin(combined_vcb_df.index)
+    ]
+    train_rest_procan_df = combined_procan_dia_df[
+        combined_procan_dia_df.index.isin(train_rest_procan_df.index)
+    ]
+    train_rest_dia_df = combined_procan_dia_df[
+        combined_procan_dia_df.index.isin(train_rest_dia_df.index)
+    ]
+
+    # Perform z-score normalization on train_rest_cptac_df
+    train_rest_cptac_protein_data = train_rest_cptac_df.iloc[:, META_COL_NUMS:]
+    scaler_cptac = StandardScaler()
+    train_rest_cptac_protein_data_zscore = pd.DataFrame(
+        scaler_cptac.fit_transform(train_rest_cptac_protein_data),
+        index=train_rest_cptac_protein_data.index,
+        columns=train_rest_cptac_protein_data.columns,
+    )
+    train_rest_cptac_df.iloc[:, META_COL_NUMS:] = train_rest_cptac_protein_data_zscore
+
+    train_rest_df = pd.concat(
+        [train_rest_procan_df, train_rest_cptac_df, train_rest_dia_df]
+    )
+
+    test_rest_df = pd.concat(test_rest_df)
     print(f"test shape of samples: {test_rest_df.shape[0]}")
     test_rest_df = test_rest_df.drop_duplicates(
         subset=["subject_collaborator_patient_id"], keep="last"
@@ -183,6 +221,42 @@ if __name__ == "__main__":
             | (test_rest_df["prep_cohort"].str.startswith("DIA"))
         )
     ]
+    test_rest_cptac_df = test_rest_df[
+        test_rest_df["prep_cohort"].str.startswith("CPTAC")
+    ]
+    test_rest_dia_df = test_rest_df[test_rest_df["prep_cohort"].str.startswith("DIA")]
+
+    combined_procan_dia_test_df = pd.concat([test_rest_procan_df, test_rest_dia_df])
+    combined_procan_dia_test_protein_data = combined_procan_dia_test_df.iloc[
+        :, META_COL_NUMS:
+    ]
+    combined_procan_dia_test_protein_data_zscore = pd.DataFrame(
+        scaler_procan_dia.transform(combined_procan_dia_test_protein_data),
+        index=combined_procan_dia_test_protein_data.index,
+        columns=combined_procan_dia_test_protein_data.columns,
+    )
+    combined_procan_dia_test_df.iloc[:, META_COL_NUMS:] = (
+        combined_procan_dia_test_protein_data_zscore
+    )
+    test_rest_procan_df = combined_procan_dia_test_df[
+        combined_procan_dia_test_df.index.isin(test_rest_procan_df.index)
+    ]
+    test_rest_dia_df = combined_procan_dia_test_df[
+        combined_procan_dia_test_df.index.isin(test_rest_dia_df.index)
+    ]
+
+    test_rest_cptac_protein_data = test_rest_cptac_df.iloc[:, META_COL_NUMS:]
+    test_rest_cptac_protein_data_zscore = pd.DataFrame(
+        scaler_cptac.transform(test_rest_cptac_protein_data),
+        index=test_rest_cptac_protein_data.index,
+        columns=test_rest_cptac_protein_data.columns,
+    )
+    test_rest_cptac_df.iloc[:, META_COL_NUMS:] = test_rest_cptac_protein_data_zscore
+
+    test_rest_df = pd.concat(
+        [test_rest_procan_df, test_rest_cptac_df, test_rest_dia_df]
+    )
+
     print(f"test shape of unique samples: {test_rest_df.shape[0]}")
 
     print(train_rest_df[TARGET].value_counts())
@@ -406,7 +480,7 @@ if __name__ == "__main__":
                 score_dict["repeat"] = repeat
                 best_scores.append(score_dict)
 
-                if fed_iter == N_iters - 1:
+                if fed_iter == 0:
                     confs = model_training.get_pred_for_cm()
                     confs_df = pd.DataFrame(confs, columns=le.classes_)
                     confs_df["pred"] = confs_df.idxmax(axis=1)

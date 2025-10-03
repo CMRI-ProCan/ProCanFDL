@@ -1,14 +1,14 @@
 # ProCanFDL
 
 ## Overview
-ProCanFDL is a federated deep learning (FDL) framework designed for cancer subtyping using mass spectrometry (MS)-based proteomic data. This repository contains the code used for training local, centralised, and federated models on the ProCan Compendium, as well as external validation datasets. The codebase also includes utilities for data preparation, model evaluation, and performance visualization.
+ProCanFDL is a federated deep learning (FDL) framework designed for cancer subtyping using mass spectrometry (MS)-based proteomic data. This repository contains the code used for training local, centralised, and federated models on the ProCan Compendium (n = 7,525 samples from 30 cohorts, representing 19,930 replicate DIA-MS runs) and external validation datasets (n = 887 samples from 10 cohorts). The framework achieved a 43% performance gain on the hold-out test set (n = 625) compared with local models and matched centralised model performance. The codebase also includes utilities for data preparation, model evaluation, and performance visualisation.
 
 ## Features
 
 - **Cancer Subtype Classification**: Classify 14 different cancer subtypes using proteomic data
-- **Federated Learning**: Train models across distributed datasets while preserving data privacy
+- **Federated Learning**: Train models across distributed datasets whilst preserving data privacy
 - **Pretrained Models**: Use our pretrained models for inference on your own data
-- **Easy Configuration**: Centralized configuration management for easy customization
+- **Easy Configuration**: Centralised configuration management for easy customisation
 - **Comprehensive Utilities**: Tools for data preparation, evaluation, and SHAP analysis
 
 ## Supported Cancer Types
@@ -76,12 +76,12 @@ sample_002,4.987,3.654,5.432,3.876,4.321,...
 **Important Notes:**
 - Missing proteins will be automatically filled with zeros
 - The model expects ~8000 protein features (see `data/data_format.csv` for complete list)
-- Data should be log2-transformed and normalized
+- Data should be log2-transformed and normalised
 - Missing values should be handled before input (or will be filled with 0)
 
 ### Step 2: Download Pretrained Model
 
-Place the pretrained model file in the `pretrained/` directory:
+The pretrained ProCanFDL global model will be made available upon publication. Place the pretrained model file in the `pretrained/` directory:
 ```
 pretrained/cancer_subtype_pretrained.pt
 ```
@@ -125,7 +125,7 @@ sample_002,Colorectal_adenocarcinoma,1,0.85,0.05,...
 
 ### Configuration
 
-All paths and hyperparameters are centralized in `config.py`. Key settings:
+All paths and hyperparameters are centralised in `config.py`. Key settings based on the published model:
 
 ```python
 # Directories
@@ -133,7 +133,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 MODEL_DIR = PROJECT_ROOT / "models"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
-# Hyperparameters
+# Hyperparameters (optimised values from publication)
 DEFAULT_HYPERPARAMETERS = {
     'lr': 1e-4,
     'weight_decay': 1e-4,
@@ -143,7 +143,7 @@ DEFAULT_HYPERPARAMETERS = {
     'epochs': 200,
 }
 
-# Cancer types
+# Cancer types (14 subtypes for ProCan Compendium)
 DEFAULT_CANCER_TYPES = [...]  # List of 14 cancer types
 ```
 
@@ -151,7 +151,7 @@ You can modify these settings by editing `config.py` or by overriding them in yo
 
 ### Training on ProCan Compendium
 
-This script trains models using the ProCan Compendium dataset with federated learning:
+This script trains models using the ProCan Compendium dataset (n = 7,525 samples from 30 cohorts) with federated learning:
 
 ```bash
 cd ProCanFDL
@@ -159,9 +159,12 @@ python ProCanFDLMain_compendium.py
 ```
 
 **What it does:**
+- Simulates federated learning across 4 local sites
+- Site 1: Contains cohort 1 (pan-cancer cohort with 14 cancer subtypes)
+- Sites 2-4: Randomly distributed subsets of cohorts 2-30
 - Trains local models on different cohorts
-- Aggregates models using federated averaging (FedAvg)
-- Evaluates on held-out test set
+- Aggregates models using federated averaging (FedAvg) over 10 iterations
+- Evaluates on held-out test set (10% of cohorts 2-30)
 - Saves model checkpoints and performance metrics
 
 **Output:**
@@ -170,7 +173,7 @@ python ProCanFDLMain_compendium.py
 
 ### Training with External Validation Datasets
 
-This script includes external datasets (CPTAC, DIA) for validation:
+This script includes external datasets (DIA-MS and TMT from CPTAC) for validation, expanding to 16 cancer subtypes:
 
 ```bash
 cd ProCanFDL
@@ -178,13 +181,15 @@ python ProCanFDLMain_external.py
 ```
 
 **Additional features:**
-- Z-score normalization per dataset batch
-- Handles heterogeneous data sources
-- Extended validation across multiple cohorts
+- Integrates data from two distinct MS technologies (DIA-MS and TMT)
+- Z-score normalisation per dataset batch for platform harmonisation
+- Handles heterogeneous data sources across 6 simulated sites
+- Extended validation across multiple cohorts (n = 887 external samples)
+- Evaluates on 16 cancer subtypes (adds high-grade serous ovarian carcinoma and clear-cell renal cell carcinoma)
 
-### Customizing Training
+### Customising Training
 
-To customize training, modify the parameters at the top of the training scripts:
+To customise training, modify the parameters at the top of the training scripts:
 
 ```python
 # Number of federated learning clients
@@ -218,7 +223,7 @@ python RunSHAP.py
 
 **Output:**
 - SHAP values saved as pickle files in model directory
-- Can be loaded for visualization and analysis
+- Can be loaded for visualisation and analysis
 
 ## Project Structure
 
@@ -264,8 +269,12 @@ Required files (place in `data/` directory):
 - `P10/replicate_corr_protein.csv`: Sample quality metrics
 - `sample_info/sample_metadata_path_noHek_merged_replicates_Adel_EB_2.0_no_Mucinous.xlsx`: Sample metadata
 
+**Data Availability:**
+The raw DIA-MS data and processed data of cohort 1 (ProCan Compendium pan-cancer cohort) and the corresponding spectral library have been deposited in the Proteomics Identification database (PRIDE) under dataset identifier **PXD056810**.
+
 Optional (for external validation):
-- `P10/external/DIA_datasets/...`: External validation datasets
+- External DIA-MS datasets: PXD019549, PXD007810
+- CPTAC TMT datasets available at the Proteomic Data Commons (PDC): https://proteomic.datacommons.cancer.gov/pdc/cptac-pancancer
 
 ## Troubleshooting
 
@@ -329,64 +338,88 @@ self.criterion = nn.CrossEntropyLoss(weight=class_weights)  # Weighted loss
 self.criterion = FocalLoss()  # Custom loss
 ```
 
-### Ensemble Predictions
-
-Combine multiple models for improved predictions:
-
-```python
-from FedTrain import TrainFedProtNet
-from utils.ProtDataset import ProtDataset
-import config
-
-# Load multiple models
-models = []
-for model_path in ['model1.pt', 'model2.pt', 'model3.pt']:
-    model = TrainFedProtNet(test_dataset, test_dataset, hypers, load_model=model_path)
-    models.append(model)
-
-# Average predictions
-predictions = []
-for model in models:
-    preds, probs = model.predict_custom(data)
-    predictions.append(probs)
-ensemble_probs = np.mean(predictions, axis=0)
-```
 
 ## Performance Benchmarks
 
-Performance on held-out test set:
+Performance on held-out test set from ProCan Compendium (14 cancer subtypes):
 
-| Model Type | Accuracy | F1-Score | AUROC |
-|-----------|----------|----------|-------|
-| Centralized | 0.85 | 0.84 | 0.92 |
-| Federated (FedAvg) | 0.83 | 0.82 | 0.90 |
-| Local (single site) | 0.78 | 0.76 | 0.87 |
+| Model Type | Macro-averaged AUROC | Accuracy |
+|-----------|----------|----------|
+| Centralised | 0.9999 | 0.990 |
+| ProCanFDL (Global) | 0.9992 | 0.965 |
+| Site 1 (Local) | 0.9805 | 0.847 |
+| Site 2 (Local) | 0.9502 | - |
+| Site 3 (Local) | 0.9680 | - |
+| Site 4 (Local) | 0.9522 | - |
 
-*Results may vary depending on data quality and preprocessing
+External validation (16 cancer subtypes including DIA-MS and TMT data):
+
+| Model Type | Macro-averaged AUROC | Accuracy |
+|-----------|----------|----------|
+| Centralised | 0.9999 | - |
+| ProCanFDL (Global) | 0.9987 | - |
+| Local models | 0.5162-0.9133 | - |
+
+ProCanFDL achieved a **43% performance improvement** over local models whilst matching centralised model performance and maintaining data privacy.
+
+*Results from Cai et al., Cancer Discovery 2025
 
 ## Citation
 
 If you use ProCanFDL in your research, please cite:
 
 ```bibtex
-@article{procanfdl2024,
-  title={ProCanFDL: Federated Deep Learning for Cancer Subtyping from Proteomic Data},
-  author={Your Name et al.},
-  journal={Journal Name},
-  year={2024}
+@article{cai2025procanfdl,
+  title={Federated Deep Learning Enables Cancer Subtyping by Proteomics},
+  author={Cai, Zhaoxiang and Boys, Emma L and Noor, Zainab and Aref, Adel T and Xavier, Dylan and Lucas, Natasha and Williams, Steven G and Koh, Jennifer MS and Poulos, Rebecca C and Wu, Yangxiu and Dausmann, Michael and MacKenzie, Karen L and others},
+  journal={Cancer Discovery},
+  year={2025},
+  doi={10.1158/2159-8290.CD-24-1488},
+  publisher={American Association for Cancer Research}
 }
 ```
 
+**Full reference:**
+Cai Z, Boys EL, Noor Z, Aref AT, Xavier D, Lucas N, et al. Federated Deep Learning Enables Cancer Subtyping by Proteomics. Cancer Discovery. 2025. DOI: 10.1158/2159-8290.CD-24-1488
+
 ## License
 
-[Add your license here]
+This work is distributed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0) licence.
+
+©2025 The Authors; Published by the American Association for Cancer Research
 
 ## Contact
 
 For questions and support:
 - Create an issue on GitHub
-- Email: [your.email@institution.edu]
+- Email the corresponding authors:
+  - Peter G. Hains: phains@cmri.org.au
+  - Phillip J. Robinson: probinson@cmri.org.au
+  - Qing Zhong: qzhong@cmri.org.au
+  - Roger R. Reddel: rreddel@cmri.org.au
 
-## Acknowledgments
+**ProCan**  
+Children's Medical Research Institute  
+Faculty of Medicine and Health, The University of Sydney  
+214 Hawkesbury Road, Westmead 2145, Australia
 
-This work was supported by [funding sources]. We thank [contributors/collaborators] for their valuable input.
+## Acknowledgements
+
+This work was supported by:
+- Australian Cancer Research Foundation
+- Cancer Institute NSW (2017/TPG001, REG171150, 15/TRC/1-01)
+- NSW Ministry of Health (CMP-01)
+- The University of Sydney
+- Cancer Council NSW (IG 18-01)
+- Ian Potter Foundation
+- Medical Research Future Fund
+- National Health and Medical Research Council (NHMRC) of Australia (GNT1170739, GNT1138536, GNT1137064, GNT2007839, GNT2018514)
+- National Breast Cancer Foundation (IIRS-18-164)
+- Sydney Cancer Partners Translational Partners Fellowship (Cancer Institute NSW Capacity Building Grant 2021/CBG0002)
+
+ProCan is conducted under the auspices of a Memorandum of Understanding between Children's Medical Research Institute and the U.S. National Cancer Institute's International Cancer Proteogenomics Consortium, encouraging cooperation in proteogenomic cancer research.
+
+**Biospecimen Contributors:**
+The study includes samples from 20 research groups across eight countries: Australia, USA, Canada, Spain, Austria, Sweden, and Greece. We gratefully acknowledge all collaborating institutions and the patients who consented to participate in research.
+
+For complete acknowledgements, please see the published paper: Cai et al., Cancer Discovery 2025.

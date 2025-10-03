@@ -17,9 +17,10 @@ from FedAggregateWeights import WeightsAggregation
 from FedTrain import TrainFedProtNet
 from utils.ProtDataset import ProtDataset
 from sklearn.model_selection import GroupShuffleSplit
+import config
 
-torch.manual_seed(0)
-np.random.seed(0)
+torch.manual_seed(config.RANDOM_SEED)
+np.random.seed(config.RANDOM_SEED)
 
 N_clients = 3
 N_included_clients = 3
@@ -28,69 +29,40 @@ N_iters = 10
 
 if __name__ == "__main__":
 
-    hypers = {
-        "lr": 1e-4,
-        "weight_decay": 1e-4,
-        "hidden_dim": 256,
-        "dropout": 0.2,
-        "batch_size": 100,
-        "epochs": 200,
-        # 'target': 'Broad_Cancer_Type',
-        # 'included_types': ['Adenocarcinoma', 'Sarcoma', 'Squamous', 'Melanoma', 'Neuroendocrine']
-        # 'target': 'VCB_Tissue_Type',
-        # 'included_types': ['Lung', 'Colorectal', 'Breast', 'Ovary', 'Stomach/Oesophagus', 'Prostate',
-        #                    'Pancreas', 'Liver'],
-        # 'target': 'cancer_type',
-        # 'included_types': ['Breast_carcinoma', 'Colorectal_adenocarcinoma', 'Cutaneous_melanoma',
-        #                    'Cutaneous_squamous_cell_carcinoma', 'Head_and_neck_squamous',
-        #                    'Hepatocellular_carcinoma', 'High_grade_serous_ovary', 'Leiomyosarcoma',
-        #                    'Liposarcoma', 'Non_small_cell_lung_cancer',
-        #                    'Oesophagus_adenocarcinoma', 'Pancreas_neuroendocrine',
-        #                    'Pancreatic_ductal_adenocarcinoma', 'Prostate_adenocarcinoma'],
-        "target": "cancer_type_2",
-        "included_types": [
-            "Breast_carcinoma",
-            "Colorectal_adenocarcinoma",
-            "Cutaneous_melanoma",
-            "Cutaneous_squamous_cell_carcinoma",
-            "Head_and_neck_squamous",
-            "Hepatocellular_carcinoma",
-            "Leiomyosarcoma",
-            "Liposarcoma",
-            "Non_small_cell_lung_adeno",
-            "Non_small_cell_lung_squamous",
-            "Oesophagus_adenocarcinoma",
-            "Pancreas_neuroendocrine",
-            "Pancreatic_ductal_adenocarcinoma",
-            "Prostate_adenocarcinoma",
-        ],
-    }
+    # Load hyperparameters from config
+    hypers = config.DEFAULT_HYPERPARAMETERS.copy()
+    hypers.update(
+        {
+            "target": config.DEFAULT_TARGET,
+            "included_types": config.DEFAULT_CANCER_TYPES,
+        }
+    )
+
     print(hypers)
     TARGET = hypers["target"]
     included_types = hypers["included_types"]
     FILE_NAME = f"{hypers['target']}_group{N_included_clients}of{N_clients}_{N_repeats}times_20240815_{N_iters}iter"
-    MODEL_PATH = f"/home/scai/VCB_E0008/models/Fed/{FILE_NAME}"
+    MODEL_PATH = config.get_model_path(FILE_NAME)
 
-    if not os.path.exists(MODEL_PATH):
-        os.makedirs(MODEL_PATH)
+    prot_id_to_name = pd.read_csv(config.PROTEIN_MAPPING_FILE, index_col=0).to_dict()[
+        "Gene"
+    ]
 
-    prot_id_to_name = pd.read_csv(
-        "../data/all_protein_list_mapping.csv", index_col=0
-    ).to_dict()["Gene"]
-
-    prot_name_to_id = pd.read_csv(
-        "../data/all_protein_list_mapping.csv", index_col=3
-    ).to_dict()["UniProtID"]
+    prot_name_to_id = pd.read_csv(config.PROTEIN_MAPPING_FILE, index_col=3).to_dict()[
+        "UniProtID"
+    ]
 
     combined_df = pd.read_csv(
-        "../data/P10/E0008_P10_protein_averaged_log2_transformed_EB.csv",
+        config.PROCAN_DATA_FILE,
         index_col=0,
         low_memory=False,
     )
     combined_df = combined_df[combined_df["sample_tissue_descriptor"] == "Malignant"]
     combined_df = combined_df[combined_df["sample_sample_type"] != "Cell lines"]
-    corr_df = pd.read_csv("../data/P10/replicate_corr_protein.csv")
-    low_corr_samples = corr_df[corr_df["pearsons_r"] < 0.9]["prep_lims_id"].tolist()
+    corr_df = pd.read_csv(config.REPLICATE_CORR_FILE)
+    low_corr_samples = corr_df[corr_df["pearsons_r"] < config.QUALITY_THRESHOLD][
+        "prep_lims_id"
+    ].tolist()
     combined_df = combined_df[~combined_df.index.isin(low_corr_samples)]
     if TARGET in ["Broad_Cancer_Type", "cancer_type", "cancer_type_2"]:
         combined_selected_df = combined_df[combined_df[TARGET].isin(included_types)]
@@ -122,13 +94,13 @@ if __name__ == "__main__":
     combined_rest_cohort_df = combined_rest_cohort_df.drop_duplicates(
         subset=["prep_cohort"], keep="last"
     ).reset_index(drop=True)
-    META_COL_NUMS = 73
+    META_COL_NUMS = config.META_COL_NUMS
     # combined_selected_meta_df = combined_selected_df.iloc[:, :META_COL_NUMS]
     # combined_selected_meta_df['prep_cohort_number'] = combined_selected_meta_df['prep_cohort_number'] + 1
-    # combined_selected_meta_df.to_excel("../supp_tables/Samples_for_Figure3.xlsx")
+    # combined_selected_meta_df.to_excel(config.RESULTS_DIR / "Samples_for_Figure3.xlsx")
 
     meta_vcb = pd.read_excel(
-        "../data/sample_info/sample_metadata_path_noHek_merged_replicates_Adel_EB_2.0_no_Mucinous.xlsx",
+        config.SAMPLE_METADATA_FILE,
         engine="openpyxl",
     )
     meta_vcb = meta_vcb.drop_duplicates(subset=["LIMS-ID1"])
@@ -238,9 +210,7 @@ if __name__ == "__main__":
     confs_df["pred"] = confs_df.idxmax(axis=1)
     confs_df["true"] = test_rest_df[TARGET].to_numpy()
     confs_df.index = test_rest_df.index
-    confs_df.to_csv(
-        f"/home/scai/VCB_E0008/results/P10/centralised_pred_{FILE_NAME}.csv"
-    )
+    confs_df.to_csv(config.get_results_path() / f"centralised_pred_{FILE_NAME}.csv")
 
     # start Fed training
     best_rep = 0
@@ -299,7 +269,7 @@ if __name__ == "__main__":
                 confs_df["true"] = test_rest_df[TARGET].to_numpy()
                 confs_df.index = test_rest_df.index
                 confs_df.to_csv(
-                    f"/home/scai/VCB_E0008/results/P10/vcblocal_pred_{FILE_NAME}.csv"
+                    config.get_results_path() / f"vcblocal_pred_{FILE_NAME}.csv"
                 )
 
             # Train rest
@@ -400,17 +370,17 @@ if __name__ == "__main__":
 
     all_site_sizes_df = pd.concat(all_site_sizes_df)
     all_site_sizes_df.to_csv(
-        f"/home/scai/VCB_E0008/results/P10/site_sizes_{FILE_NAME}.csv", index=False
+        config.get_results_path() / f"site_sizes_{FILE_NAME}.csv", index=False
     )
     best_scores_df = pd.DataFrame(best_scores)
     best_scores_df.to_csv(
-        f"/home/scai/VCB_E0008/results/P10/best_scores_{FILE_NAME}.csv", index=False
+        config.get_results_path() / f"best_scores_{FILE_NAME}.csv", index=False
     )
 
     all_confs_local_sites_df = pd.concat(all_confs_local_sites_df)
     all_confs_local_sites_df.to_csv(
-        f"/home/scai/VCB_E0008/results/P10/local_sites_pred_{FILE_NAME}.csv"
+        config.get_results_path() / f"local_sites_pred_{FILE_NAME}.csv"
     )
 
     all_confs_df = pd.concat(all_confs_df)
-    all_confs_df.to_csv(f"/home/scai/VCB_E0008/results/P10/fedavg_pred_{FILE_NAME}.csv")
+    all_confs_df.to_csv(config.get_results_path() / f"fedavg_pred_{FILE_NAME}.csv")

@@ -82,7 +82,6 @@ if __name__ == "__main__":
         "../data/all_protein_list_mapping.csv", index_col=3
     ).to_dict()["UniProtID"]
 
-    histo_df = pd.read_csv("../data/P10/E0008_P10_histo_data.csv")
     combined_df = pd.read_csv(
         "../data/P10/E0008_P10_protein_averaged_log2_transformed_EB.csv",
         index_col=0,
